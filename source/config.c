@@ -43,7 +43,9 @@
   CONFIG_VAR_INT(map_minimap_fix); \
   CONFIG_VAR_INT(font_snap); \
   CONFIG_VAR_INT(text_scale_fix); \
-  CONFIG_VAR_FLOAT(font_scale);
+  CONFIG_VAR_FLOAT(font_scale); \
+  CONFIG_VAR_INT(play_fmv);
+
 
 Config config;
 static int config_needs_rewrite = 0;
@@ -122,6 +124,7 @@ int read_config(const char *file) {
   config.font_snap = 0;             // auto (gfx.c: whole steps on narrow panels, half on wide)
   config.font_scale = 0.0f;         // auto (gfx.c: 1.0 narrow / 1.25 wide)
   config.text_scale_fix = 1;        // labels drawn 1:1 (patches.h)
+  config.play_fmv = 1;             // play FMVs by default
 
   FILE *f = fopen(file, "r");
   if (f == NULL)

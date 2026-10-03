@@ -896,34 +896,41 @@ int main(void) {
     os_gfx_swap();
 #endif
 
-    jni_ime_service(); // show swkbd for a pending EditBox, outside nativeRender
+        jni_ime_service(); // show swkbd for a pending EditBox, outside nativeRender
 
-    // FMV transition fix: the movie scenes have no video-completion path — they only
-    // leave on a skip input (cocos KeyCode 6 -> SceneManager::NextScene). Our blocking
-    // movie_play() has no async COMPLETED, so when a clip ends we synthesize that skip
-    // here, on a clean frame boundary outside the engine's startVideo call.
+    // FMV transition handling.
+    //
+    // Normal in-game movie scenes (scene 29) need a synthetic BACK after the
+    // blocking movie finishes because the original Android video player would
+    // normally generate the input/completion path asynchronously.
+    //
+    // The final-ending movie is different: it completes while the engine is
+    // in scene 24. Do NOT inject BACK there; let the real video-completion
+    // callback/state handle the transition instead.
     if (jni_consume_video_finished()) {
-      // NextScene's destination is chosen by SceneManager's current-scene-id (an int
-      // reached via a pointer at libchrono+0xbc7210), not by the skip itself. The boot
-      // attract plays as a blocking native movie WITHOUT the engine entering
-      // DemoMovieScene, so that id is left on the boot/new-game scene -> the skip walks
-      // into the New Game flow (controls guide -> battle-mode pick). Force the id to
-      // DemoMovieScene (28) so NextScene takes the demo branch (-> replaceScene(
-      // create(3)) = TitleScene). Leave in-game cutscenes (PlayMovieScene, id 29)
-      // alone — they already have the correct destination. (Offset is libchrono v2.1.5.)
-      if (g_libchrono_v215) {
-        void **sid_pp = (void **)((uintptr_t)game_mod.load_virtbase + CT_OFF_SCENEID);
-        if (*sid_pp) {
-          int *sid = (int *)*sid_pp;
-          if (*sid != 29) *sid = 28; // 29 = PlayMovieScene cutscene; don't redirect it
-        }
-      }
-      if (e_keyEvent) {
-        e_keyEvent(fake_env, thiz, AK_BACK, 1); // KeyCode 6 == Back/Escape
-        e_keyEvent(fake_env, thiz, AK_BACK, 0);
-      }
-    }
+        int scene_id = -1;
 
+        if (g_libchrono_v215) {
+            void **sid_pp =
+                (void **)((uintptr_t)game_mod.load_virtbase + CT_OFF_SCENEID);
+
+            if (*sid_pp) {
+                int *sid = (int *)*sid_pp;
+                scene_id = *sid;
+
+                fprintf(stderr, "ct: FMV completion scene id = %d\n", scene_id);
+            }
+        }
+
+        // Normal in-game FMVs use PlayMovieScene (29) and still need the
+        // synthetic BACK to advance the scene.
+        //
+        // Do not send BACK for the final ending scene (24).
+        if (scene_id != 24 && e_keyEvent) {
+            e_keyEvent(fake_env, thiz, AK_BACK, 1); // KeyCode 6 == Back/Escape
+            e_keyEvent(fake_env, thiz, AK_BACK, 0);
+        }
+    }
 #ifdef __SWITCH__
     if (boot_frames < 10 && ++boot_frames == 10)
       cpu_boost(0);

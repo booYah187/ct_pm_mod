@@ -449,7 +449,7 @@ static int create_text_bitmap(va_list va) {
 // report COMPLETED so the engine's PlayMovieScene continues.
 // ---------------------------------------------------------------------------
 
-#define VIDEO_EVENT_COMPLETED 3
+#define VIDEO_EVENT_COMPLETED 1000
 static int g_video_next_index = 0;
 static char g_video_url[512];
 static int g_video_finished = 0; // set when a blocking clip ends; serviced by the main loop
@@ -474,14 +474,22 @@ static void video_dispatch_void(const char *name, va_list va) {
     snprintf(g_video_url, sizeof(g_video_url), "%s", url ? url : "");
     return;
   }
-  if (!strcmp(name, "startVideo")) {
-    int idx = va_arg(va, int);
+if (!strcmp(name, "startVideo")) {
+  int idx = va_arg(va, int);
+
+  if (config.play_fmv) {
     if (g_video_url[0])
       movie_play(g_video_url); // blocking: runs to clip end or skip (A/B/+)
-    if (g_video_cb) g_video_cb(fake_env, NULL, idx, VIDEO_EVENT_COMPLETED);
-    g_video_finished = 1; // the movie scene won't advance on its own — the main
-                          // loop synthesizes the skip the engine waits for.
-    return;
+  } else {
+    debugPrintf("video: skipping FMV \"%s\"\n", g_video_url);
+  }
+
+  if (g_video_cb)
+    g_video_cb(fake_env, NULL, idx, VIDEO_EVENT_COMPLETED);
+
+  g_video_finished = 1; // the movie scene won't advance on its own — the main
+                        // loop synthesizes the skip the engine waits for.
+  return;
   }
   (void)va; // removeVideoWidget/setVideoRect/seek/visible/etc: no-op
 }

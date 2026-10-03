@@ -150,6 +150,8 @@ typedef struct {
   // px requests -> 20 px = 2x font-4x3), 1.25 on wide (24 / 32 -> 32 / 40 px
   // ChronoType at 720p). Env CT_FONT_SCALE overrides.
   float font_scale;
+  // play_fmv -- play the game's FMV cutscenes. 0 = skip videos, 1 = play.
+  int play_fmv;
 } Config;
 
 extern Config config;
