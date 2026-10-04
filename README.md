@@ -1,3 +1,7 @@
+Building on the work of [ct_pm](https://github.com/springah/ct_pm) and [ct_nx](https://github.com/NaGaa95/ct_nx), this fork adds a few options and a .ctp mod to create the Definitive Edition of Chrono Trigger. ct binary and config.txt allow toggling FMV animated sequences, .ctp restores Woolsey translation, including equipment/item names, corrects palette/sprite issues, adds improved window/menu/text boxes, adds improved character portraits and 3d menu images, replaces background music with orchestral versions. The aim of this version is to satisfy the players who prefer the aesthetics of the SNES version, with the additional content of Lost Sanctum and Dimensional Vortexes. .ctp can be applied to PC/Steam version as well. Other features are planned, including config.txt english translation options and window/menu color selections, relocation of ATB bars to battle command box, and more. 
+
+.ctp can be applied with the included /tools or other methods like ChronoMod, CT Explorer, etc., although it is recommended to apply it on PC, not handheld.
+
 <div align=center>
 
 <img src="extras/banner.png" alt="Banner" width="40%">
