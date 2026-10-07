@@ -38,6 +38,7 @@
 #include "movelog.h"
 #include "patches.h"
 #include "rescale.h"
+#include "resource_overlay.h"
 
 static void *heap_so_base = NULL;
 static size_t heap_so_limit = 0;
@@ -727,6 +728,17 @@ int main(void) {
     // non-v2.1.5 build skips per-site instead of corrupting.
     apply_game_patches(&game_mod);
   }
+  /*
+   * Install the sparse resources.bin overlay hook while libchrono's text is
+   * still writable. The actual overlay archive is initialized later, after
+   * the fake Android AssetManager has been handed to the engine.
+   */
+/*
+ * Install the resources.bin overlay hook.  Unlike the other runtime patches,
+ * this uses the exported ResourceManager::getData symbol and does not depend
+ * on the raw v2.1.5 fingerprint gate.
+ */
+ct_res_overlay_install();
 
   so_finalize(&cpp_mod);
   so_finalize(&game_mod);

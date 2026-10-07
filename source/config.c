@@ -58,6 +58,7 @@ int screen_height = 720;
 // newer one added, and read_config then asks main() to rewrite it so they
 // appear (with their defaults) for the user to find and edit.
 static int config_keys_seen = 0;
+
 static int config_keys_total(void) {
   int c = 0;
   #define CONFIG_VAR_INT(var) c++
@@ -70,14 +71,82 @@ static int config_keys_total(void) {
   return c;
 }
 
+/*
+ * Store an arbitrary resource overlay option internally.
+ *
+ * Config lines such as:
+ *
+ *   face 1
+ *   music 2
+ *   font 0
+ *
+ * are stored as newline-separated "option number" pairs. These are not
+ * predefined config variables because resource options are intentionally
+ * extensible without requiring a wrapper rebuild.
+ */
+static void parse_resource_overlay(const char *name, const char *value) {
+  char entry[128];
+  size_t used;
+  size_t entry_len;
+
+  if (name[0] == 0 || value[0] == 0)
+    return;
+
+  snprintf(entry, sizeof(entry), "%s %s\n", name, value);
+
+  used = strlen(config.resource_overlays);
+  entry_len = strlen(entry);
+
+  if (used + entry_len >= sizeof(config.resource_overlays))
+    return;
+
+  memcpy(config.resource_overlays + used, entry, entry_len + 1);
+}
+
 static inline void parse_var(const char *name, const char *value) {
-  #define CONFIG_VAR_INT(var) if (!strcmp(name, #var)) { config.var = atoi(value); config_keys_seen++; return; }
-  #define CONFIG_VAR_FLOAT(var) if (!strcmp(name, #var)) { config.var = atof(value); config_keys_seen++; return; }
-  #define CONFIG_VAR_STR(var) if (!strcmp(name, #var)) { strlcpy(config.var, value, sizeof(config.var)); config_keys_seen++; return; }
+  #define CONFIG_VAR_INT(var) \
+    if (!strcmp(name, #var)) { \
+      config.var = atoi(value); \
+      config_keys_seen++; \
+      return; \
+    }
+
+  #define CONFIG_VAR_FLOAT(var) \
+    if (!strcmp(name, #var)) { \
+      config.var = atof(value); \
+      config_keys_seen++; \
+      return; \
+    }
+
+  #define CONFIG_VAR_STR(var) \
+    if (!strcmp(name, #var)) { \
+      strlcpy(config.var, value, sizeof(config.var)); \
+      config_keys_seen++; \
+      return; \
+    }
+
   CONFIG_VARS
+
   #undef CONFIG_VAR_INT
   #undef CONFIG_VAR_FLOAT
   #undef CONFIG_VAR_STR
+
+  /*
+   * Anything that wasn't one of the predefined configuration variables is
+   * treated as a resource overlay selection.
+   *
+   * For example:
+   *
+   *   face 1
+   *
+   * is stored internally as:
+   *
+   *   "face 1\n"
+   *
+   * Unknown keys deliberately do not increment config_keys_seen because
+   * config_keys_total() only counts the predefined configuration variables.
+   */
+  parse_resource_overlay(name, value);
 }
 
 int read_config(const char *file) {
@@ -86,68 +155,87 @@ int read_config(const char *file) {
   memset(&config, 0, sizeof(Config));
   config_needs_rewrite = 0;
   config_keys_seen = 0;
+
   config.screen_width = -1; // auto
   config.screen_height = -1;
+
   strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
-  config.render_scale = 1.0f;  // native; set 0.75 on GPU-bound devices to trade
-                               // sharpness for fps. (The stock 16:9 design entry is
-                               // 568x320, so no panel is an exact integer multiple
-                               // -- 720p is 2.2535x. ui_scale_fix would make it
-                               // 640x360/exact-2x, but that patch is not ported.)
+
+  config.render_scale = 1.0f;
   strlcpy(config.render_filter, "linear", sizeof(config.render_filter));
-  config.force_nearest = 1;    // crisp pixel art; A/B'd on the TrimUI (PowerVR GE8300)
-  config.gl_threaded = 0;      // mesa_glthread: no-op on blob drivers (PowerVR),
-                               // measured latency on panfrost/Mali -- off by default
-  config.gl_no_error = 1;      // skip mesa's per-call GL validation (MESA_NO_ERROR)
-  config.shader_cache = 1;     // GL program binary cache (shadercache.c); verified
-                               // on PowerVR GE8300 + Mali-G31 (self-disables elsewhere)
-  config.cursor_fix = 1;            // libchrono patch groups (patches.h); on by default (v2.1.5-verified on-device)
+
+  config.force_nearest = 1;
+  config.gl_threaded = 0;
+  config.gl_no_error = 1;
+  config.shader_cache = 1;
+
+  config.cursor_fix = 1;
   config.remove_mobile_ui = 1;
   config.controller_glyphs = 1;
   config.fix_diagonal_movement = 1;
-  // Input remap: default each extra button to its own stock action (a no-op
-  // remap) so config.txt shows a clear, editable value rather than a blank.
+
   strlcpy(config.key_zl, "zl", sizeof(config.key_zl));
   strlcpy(config.key_zr, "zr", sizeof(config.key_zr));
   strlcpy(config.key_start, "start", sizeof(config.key_start));
   strlcpy(config.key_select, "select", sizeof(config.key_select));
-  config.right_stick_mirror = 1; // right stick mirrors movement (current behaviour)
-  // Framing cluster (patches.h section 5): on by default, auto-resolved per panel.
+
+  config.right_stick_mirror = 1;
   config.ui_scale_fix = 1;
-  config.design_scale = 0.0f;       // auto
+  config.design_scale = 0.0f;
   config.game_area_width_fix = 1;
+
   config.field_zoom_fix = 1;
-  config.field_zoom = 0.0f;         // auto
+  config.field_zoom = 0.0f;
+
   config.map_zoom_fix = 1;
-  config.map_zoom = 0.0f;           // auto = field_zoom
+  config.map_zoom = 0.0f;
+
   config.map_minimap_fix = 1;
-  config.font_snap = 0;             // auto (gfx.c: whole steps on narrow panels, half on wide)
-  config.font_scale = 0.0f;         // auto (gfx.c: 1.0 narrow / 1.25 wide)
-  config.text_scale_fix = 1;        // labels drawn 1:1 (patches.h)
-  config.play_fmv = 1;             // play FMVs by default
+  config.font_snap = 0;
+  config.font_scale = 0.0f;
+  config.text_scale_fix = 1;
+  config.play_fmv = 1;
+
+  /*
+   * Empty means no resource overlays.
+   *
+   * Resource overlay selections are stored internally as newline-separated
+   * "option number" pairs, for example:
+   *
+   *   face 1
+   *   music 2
+   *   font 0
+   */
+  config.resource_overlays[0] = 0;
 
   FILE *f = fopen(file, "r");
   if (f == NULL)
     return -1;
 
-  // parse lines of the forms
-  // <spaces> # <whatever> \n
-  // <spaces> NAME <spaces> VALUE <spaces> \n
   do {
     char *name = NULL, *value = NULL, *tmp = NULL;
+
     if (fgets(line, sizeof(line), f) != NULL) {
       name = line;
-      // trim name
-      while (*name && isspace((int)*name)) ++name;
-      if (name[0] == '#') continue; // skip comments
+
+      while (*name && isspace((int)*name))
+        ++name;
+
+      if (name[0] == '#')
+        continue;
+
       for (tmp = name; *tmp && !isspace((int)*tmp); ++tmp);
-      // if tmp points to the end of the string, there's no value to parse
+
       if (*tmp != 0) {
         *tmp = 0;
-        // value is next; trim value
+
         for (value = tmp + 1; *value && isspace((int)*value); ++value);
-        for (tmp = value + strlen(value) - 1; tmp >= value && isspace((int)*tmp); --tmp) *tmp = 0;
-        // got key value pair
+
+        for (tmp = value + strlen(value) - 1;
+             tmp >= value && isspace((int)*tmp);
+             --tmp)
+          *tmp = 0;
+
         parse_var(name, value);
       }
     }
@@ -155,39 +243,58 @@ int read_config(const char *file) {
 
   fclose(f);
 
-  // A malformed/blank "language" line would leave the field empty; restore the
-  // default so lang_index() gets a valid value (empty would silently mean en).
   if (config.language[0] == 0)
     strlcpy(config.language, LANG_DEFAULT, sizeof(config.language));
 
-  // fewer distinct keys than we know -> the file predates some of them
   if (config_keys_seen < config_keys_total())
     config_needs_rewrite = 1;
+
   return config_needs_rewrite ? 1 : 0;
 }
 
 int write_config(const char *file) {
-  // write beside, then rename: a crash mid-write must not leave a truncated config
   char tmp[1024];
+
   snprintf(tmp, sizeof(tmp), "%s.new", file);
+
   FILE *f = fopen(tmp, "w");
   if (f == NULL)
     return -1;
 
-  #define CONFIG_VAR_INT(var) fprintf(f, "%s %d\n", #var, config.var)
-  #define CONFIG_VAR_FLOAT(var) fprintf(f, "%s %g\n", #var, config.var)
-  // read_config seeds every string var to a non-empty default (language via the
-  // blank-line restore above; the key_* remaps in the defaults block), so emit
-  // the field verbatim -- a LANG_DEFAULT fallback here would wrongly stamp the
-  // language sentinel onto an empty keybind field.
-  #define CONFIG_VAR_STR(var) fprintf(f, "%s %s\n", #var, config.var)
+  #define CONFIG_VAR_INT(var) \
+    fprintf(f, "%s %d\n", #var, config.var)
+
+  #define CONFIG_VAR_FLOAT(var) \
+    fprintf(f, "%s %g\n", #var, config.var)
+
+  #define CONFIG_VAR_STR(var) \
+    fprintf(f, "%s %s\n", #var, config.var)
+
   CONFIG_VARS
+
   #undef CONFIG_VAR_INT
   #undef CONFIG_VAR_FLOAT
   #undef CONFIG_VAR_STR
 
+  /*
+   * Resource overlay selections are stored internally as newline-separated
+   * "option number" pairs, so write them directly after the normal settings.
+   *
+   * Example:
+   *
+   *   face 1
+   *   music 2
+   *   font 0
+   */
+  if (config.resource_overlays[0] != 0)
+    fputs(config.resource_overlays, f);
+
   fclose(f);
-  if (rename(tmp, file) != 0) { remove(tmp); return -1; }
+
+  if (rename(tmp, file) != 0) {
+    remove(tmp);
+    return -1;
+  }
 
   return 0;
 }
